@@ -1,5 +1,9 @@
 import { useMemo } from "react";
 import { edenStore, useEdenStore } from "../store/edenStore";
+import { ActivityFeed } from "./ActivityFeed";
+import { DeveloperPanel } from "./DeveloperPanel";
+import { ModelAssumptions } from "./ModelAssumptions";
+import { ModuleInspector } from "./ModuleInspector";
 
 function formatMoney(value: number): string {
   return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -72,18 +76,42 @@ export function ResourcePanel() {
         </div>
       </div>
 
+      <ModuleInspector />
+      <ActivityFeed />
+
       {resources ? (
-        <div className="resource-bars">
-          <MetricBar
-            label="Battery"
-            value={resources.batteryKwh}
-            max={resources.batteryCapacityKwh}
-            unit="kWh"
-          />
-          <MetricBar label="Water" value={resources.waterKg} max={13_700} unit="kg" />
-          <MetricBar label="Oxygen" value={resources.oxygenKg} max={260} unit="kg" />
-          <MetricBar label="Food" value={resources.foodKg} max={2_600} unit="kg" />
-        </div>
+        <section aria-label="Latest resource balances">
+          <div className="panel-section-heading">
+            <span>LATEST BALANCES</span>
+            <small>run snapshot</small>
+          </div>
+          <div className="resource-bars">
+            <MetricBar
+              label="Battery"
+              value={resources.batteryKwh}
+              max={resources.batteryCapacityKwh}
+              unit="kWh"
+            />
+            <MetricBar
+              label="Water"
+              value={resources.waterKg}
+              max={13_700}
+              unit="kg"
+            />
+            <MetricBar
+              label="Oxygen"
+              value={resources.oxygenKg}
+              max={260}
+              unit="kg"
+            />
+            <MetricBar
+              label="Food"
+              value={resources.foodKg}
+              max={2_600}
+              unit="kg"
+            />
+          </div>
+        </section>
       ) : (
         <div className="empty-state">
           Run the mission to populate resource telemetry and failure evidence.
@@ -111,6 +139,9 @@ export function ResourcePanel() {
           </p>
         ) : null}
       </div>
+
+      <ModelAssumptions />
+      <DeveloperPanel />
     </section>
   );
 }
