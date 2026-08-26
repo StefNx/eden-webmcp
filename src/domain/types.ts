@@ -138,6 +138,14 @@ export interface SimulationEventLog {
   message: string;
 }
 
+export interface ScenarioMarker {
+  id: string;
+  label: string;
+  type: ScenarioEvent["type"];
+  startSol: number;
+  endSol: number;
+}
+
 export interface FailureAnalysis {
   code:
     | "INVALID_DESIGN"
@@ -170,6 +178,7 @@ export interface SimulationMetrics {
 export interface SimulationRun {
   id: string;
   designVersion: number;
+  designSnapshot: HabitatDesign;
   seed: number;
   status: "success" | "failure";
   lastSol: number;
@@ -177,7 +186,54 @@ export interface SimulationRun {
   metrics: SimulationMetrics;
   timeline: TimelinePoint[];
   events: SimulationEventLog[];
+  scenarioMarkers: ScenarioMarker[];
   failure?: FailureAnalysis;
+}
+
+export interface DesignDiff {
+  addedModuleIds: string[];
+  removedModuleIds: string[];
+  changedModules: Array<{ id: string; fields: string[] }>;
+  addedConnectionIds: string[];
+  removedConnectionIds: string[];
+  changedConstraints: string[];
+}
+
+export interface RunComparison {
+  firstRunId: string;
+  secondRunId: string;
+  outcomeChanged: boolean;
+  failureCauseChanged: boolean;
+  delta: {
+    survivalSols: number;
+    costUsd: number;
+    massKg: number;
+    minBatteryPercent: number;
+    waterReserveSols: number;
+    oxygenReserveSols: number;
+  };
+  designDiff: DesignDiff;
+}
+
+export interface ActivityEntry {
+  id: string;
+  timestamp: string;
+  actor: Actor;
+  action: string;
+  message: string;
+  designVersion: number;
+}
+
+export interface ToolInvocationRecord {
+  id: string;
+  toolName: string;
+  startedAt: string;
+  completedAt?: string;
+  status: "running" | "success" | "error";
+  rawArguments: Record<string, unknown>;
+  validatedArguments?: Record<string, unknown>;
+  result?: unknown;
+  designVersion: number;
 }
 
 export interface DesignValidation {

@@ -2,7 +2,6 @@ import {
   Background,
   Controls,
   MarkerType,
-  MiniMap,
   ReactFlow,
   type Connection as FlowConnection,
   type Edge,
@@ -68,6 +67,10 @@ export function HabitatCanvas() {
     }
   };
 
+  const reportActionError = (error: unknown) => {
+    window.alert(error instanceof Error ? error.message : String(error));
+  };
+
   return (
     <section className="canvas-shell" aria-label="Habitat design canvas">
       <div className="canvas-grid-label">
@@ -83,17 +86,32 @@ export function HabitatCanvas() {
         onNodeDragStop={(_, node) =>
           edenStore.actions.updateModule(node.id, { position: node.position }, "human")
         }
+        onNodesDelete={(deleted) => {
+          for (const node of deleted) {
+            try {
+              edenStore.actions.removeModule(node.id, "human");
+            } catch (error) {
+              reportActionError(error);
+            }
+          }
+        }}
         onEdgesDelete={(deleted) =>
-          deleted.forEach((edge) => edenStore.actions.removeConnection(edge.id))
+          deleted.forEach((edge) => {
+            try {
+              edenStore.actions.removeConnection(edge.id, "human");
+            } catch (error) {
+              reportActionError(error);
+            }
+          })
         }
         fitView
         fitViewOptions={{ padding: 0.18 }}
         minZoom={0.35}
         maxZoom={1.5}
         deleteKeyCode={["Backspace", "Delete"]}
+        aria-label="Interactive habitat resource graph"
       >
         <Background gap={24} size={1} />
-        <MiniMap pannable zoomable />
         <Controls showInteractive={false} />
       </ReactFlow>
     </section>

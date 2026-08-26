@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { MODULE_CATALOG } from "../domain/catalog";
 import { MODULE_KINDS, RESOURCE_KINDS } from "../domain/types";
-import type { Point, SimulationRun } from "../domain/types";
+import type { Point, RunComparison, SimulationRun } from "../domain/types";
+import { compareSimulationRuns } from "../simulation/compareRuns";
 import { edenStore } from "../store/edenStore";
 
 const pointSchema = z.object({
@@ -22,7 +23,40 @@ function fail(error: unknown) {
   return {
     ok: false,
     error: error instanceof Error ? error.message : String(error),
+    validationError: error instanceof z.ZodError,
     designVersion: edenStore.getState().design.version,
+  };
+}
+
+function instrumentTool(tool: WebMcpTool): WebMcpTool {
+  return {
+    ...tool,
+    execute: async (input, options) => {
+      const invocationId = edenStore.actions.beginToolInvocation(tool.name, input);
+      try {
+        const executionOptions =
+          options ?? { signal: new AbortController().signal };
+        executionOptions.signal.throwIfAborted();
+        const result = await tool.execute(input, executionOptions);
+        const envelope = result as {
+          ok?: boolean;
+          validationError?: boolean;
+        };
+        if (!envelope.validationError) {
+          edenStore.actions.setValidatedToolArguments(invocationId, input);
+        }
+        edenStore.actions.finishToolInvocation(
+          invocationId,
+          envelope.ok === false ? "error" : "success",
+          result,
+        );
+        return result;
+      } catch (error) {
+        const result = fail(error);
+        edenStore.actions.finishToolInvocation(invocationId, "error", result);
+        return result;
+      }
+    },
   };
 }
 
@@ -42,11 +76,43 @@ function summarizeRun(run: SimulationRun) {
     lastSol: run.lastSol,
     failure: run.failure,
     metrics: run.metrics,
+    scenarioMarkers: run.scenarioMarkers,
     notableEvents: run.events.slice(-8),
   };
 }
 
-const BASE_TOOLS: WebMcpTool[] = [
+function rounded(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function summarizeComparisonRun(run: SimulationRun) {
+  return {
+    id: run.id,
+    designVersion: run.designVersion,
+    status: run.status,
+    lastSol: run.lastSol,
+    cause: run.failure?.code ?? "MISSION_SURVIVED",
+    costUsd: run.metrics.totalCostUsd,
+    massKg: run.metrics.totalMassKg,
+    minBatteryPercent: rounded(run.metrics.minBatteryPercent),
+    minWaterReserveSols: rounded(run.metrics.minWaterReserveSols),
+    minOxygenReserveSols: rounded(run.metrics.minOxygenReserveSols),
+  };
+}
+
+function summarizeComparison(comparison: RunComparison): RunComparison {
+  return {
+    ...comparison,
+    delta: {
+      ...comparison.delta,
+      minBatteryPercent: rounded(comparison.delta.minBatteryPercent),
+      waterReserveSols: rounded(comparison.delta.waterReserveSols),
+      oxygenReserveSols: rounded(comparison.delta.oxygenReserveSols),
+    },
+  };
+}
+
+const BASE_TOOL_DEFINITIONS: WebMcpTool[] = [
   {
     name: "get_mission_state",
     title: "Get EDEN mission state",
@@ -173,13 +239,18 @@ const BASE_TOOLS: WebMcpTool[] = [
     name: "connect_modules",
     title: "Connect habitat modules",
     description:
-      "Create one typed resource connection between two existing modules. The source must output the resource and the target must accept it.",
+      "Create one typed resource connection between two existing modules. The source must output the resource and the target must accept it. Human-locked endpoints reject agent changes unless explicitly authorized.",
     inputSchema: {
       type: "object",
       properties: {
         sourceId: { type: "string" },
         targetId: { type: "string" },
         resource: { type: "string", enum: RESOURCE_KINDS },
+        overrideLocked: {
+          type: "boolean",
+          description:
+            "Use only after the human explicitly authorizes changing a locked endpoint.",
+        },
       },
       required: ["sourceId", "targetId", "resource"],
       additionalProperties: false,
@@ -191,6 +262,7 @@ const BASE_TOOLS: WebMcpTool[] = [
             sourceId: z.string().min(1),
             targetId: z.string().min(1),
             resource: z.enum(RESOURCE_KINDS),
+            overrideLocked: z.boolean().optional(),
           })
           .parse(input);
         const connection = edenStore.actions.connectModules(
@@ -198,6 +270,7 @@ const BASE_TOOLS: WebMcpTool[] = [
           parsed.targetId,
           parsed.resource,
           "agent",
+          parsed.overrideLocked ?? false,
         );
         return ok(
           `Connected ${parsed.sourceId} to ${parsed.targetId} for ${parsed.resource}.`,
@@ -343,7 +416,7 @@ const BASE_TOOLS: WebMcpTool[] = [
         const parsed = z
           .object({ seed: z.number().int().min(0).max(4_294_967_295).optional() })
           .parse(input);
-        const run = edenStore.actions.run(parsed.seed ?? 424_242);
+        const run = edenStore.actions.run(parsed.seed ?? 424_242, "agent");
         return ok(`Simulation ${run.status} at sol ${run.lastSol}.`, {
           run: summarizeRun(run),
         });
@@ -365,11 +438,15 @@ const BASE_TOOLS: WebMcpTool[] = [
     execute: async (input) =>
       safeExecute(() => {
         z.object({ confirm: z.literal(true) }).parse(input);
-        edenStore.actions.reset();
+        edenStore.actions.reset("agent");
         return ok("EDEN reset to the starter habitat.");
       }),
   },
 ];
+
+const BASE_TOOLS = BASE_TOOL_DEFINITIONS.map(instrumentTool);
+
+export const BASE_TOOL_NAMES = BASE_TOOLS.map((tool) => tool.name);
 
 function latestRunTool(run: SimulationRun): WebMcpTool {
   return {
@@ -414,25 +491,26 @@ function compareRunsTool(): WebMcpTool {
         if (!first || !second) {
           throw new Error("One or both run IDs are unavailable.");
         }
-        return ok("Run comparison.", {
-          first: summarizeRun(first),
-          second: summarizeRun(second),
-          delta: {
-            costUsd: second.metrics.totalCostUsd - first.metrics.totalCostUsd,
-            massKg: second.metrics.totalMassKg - first.metrics.totalMassKg,
-            survivalSols: second.lastSol - first.lastSol,
-            waterReserveSols:
-              second.metrics.minWaterReserveSols - first.metrics.minWaterReserveSols,
-            oxygenReserveSols:
-              second.metrics.minOxygenReserveSols - first.metrics.minOxygenReserveSols,
+        const comparison = compareSimulationRuns(first, second);
+        return ok(
+          `Compared design v${first.designVersion} ${first.failure?.code ?? "MISSION_SURVIVED"} to v${second.designVersion} ${second.failure?.code ?? "MISSION_SURVIVED"}.`,
+          {
+            first: summarizeComparisonRun(first),
+            second: summarizeComparisonRun(second),
+            comparison: summarizeComparison(comparison),
           },
-        });
+        );
       }),
   };
 }
 
-export function registerEdenTools(): () => void {
-  const modelContext = document.modelContext;
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+export function registerEdenTools(
+  modelContext: ModelContext | undefined = document.modelContext,
+): () => void {
   if (typeof modelContext?.registerTool !== "function") {
     edenStore.actions.setWebMcpStatus({
       state: "unavailable",
@@ -445,7 +523,7 @@ export function registerEdenTools(): () => void {
   const baseController = new AbortController();
   let dynamicController = new AbortController();
   let previousDynamicKey = "";
-  const baseNames = BASE_TOOLS.map((tool) => tool.name);
+  const baseNames = BASE_TOOL_NAMES;
 
   Promise.all(
     BASE_TOOLS.map((tool) =>
@@ -460,6 +538,7 @@ export function registerEdenTools(): () => void {
       });
     })
     .catch((error: unknown) => {
+      if (isAbortError(error)) return;
       edenStore.actions.setWebMcpStatus({
         state: "error",
         registeredTools: [],
@@ -477,8 +556,10 @@ export function registerEdenTools(): () => void {
     dynamicController = new AbortController();
 
     const dynamicTools: WebMcpTool[] = [];
-    if (latest) dynamicTools.push(latestRunTool(latest));
-    if (current.runs.length >= 2) dynamicTools.push(compareRunsTool());
+    if (latest) dynamicTools.push(instrumentTool(latestRunTool(latest)));
+    if (current.runs.length >= 2) {
+      dynamicTools.push(instrumentTool(compareRunsTool()));
+    }
 
     void Promise.all(
       dynamicTools.map((tool) =>
@@ -494,7 +575,7 @@ export function registerEdenTools(): () => void {
         });
       })
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (isAbortError(error)) return;
         console.warn("Failed to refresh EDEN dynamic WebMCP tools", error);
       });
   };

@@ -13,6 +13,8 @@ const ADD_POSITIONS = [
 export function MissionPanel() {
   const constraints = useEdenStore((current) => current.design.constraints);
   const moduleCount = useEdenStore((current) => current.design.modules.length);
+  const canUndo = useEdenStore((current) => current.pastDesigns.length > 0);
+  const canRedo = useEdenStore((current) => current.futureDesigns.length > 0);
 
   const addModule = (kind: ModuleKind) => {
     const offset = ADD_POSITIONS[moduleCount % ADD_POSITIONS.length];
@@ -27,6 +29,23 @@ export function MissionPanel() {
       <div className="panel-heading">
         <span className="eyebrow">MISSION</span>
         <strong>Ares Gauntlet</strong>
+      </div>
+
+      <div className="history-actions" aria-label="Design history controls">
+        <button
+          type="button"
+          disabled={!canUndo}
+          onClick={() => edenStore.actions.undo("human")}
+        >
+          ↶ Undo
+        </button>
+        <button
+          type="button"
+          disabled={!canRedo}
+          onClick={() => edenStore.actions.redo("human")}
+        >
+          ↷ Redo
+        </button>
       </div>
 
       <div className="mission-copy">
@@ -133,6 +152,16 @@ export function MissionPanel() {
           </div>
         </label>
       </div>
+
+      <button
+        className="demo-constraint-button"
+        type="button"
+        onClick={() =>
+          edenStore.actions.setConstraints({ maxBudgetUsd: 7_950_000 }, "human")
+        }
+      >
+        Demo trade-off · cap budget at $7.95M
+      </button>
 
       <div className="panel-section-heading">
         <span>MODULE CATALOG</span>

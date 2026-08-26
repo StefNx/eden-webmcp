@@ -1,12 +1,22 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { HabitatCanvas } from "./components/HabitatCanvas";
 import { MissionPanel } from "./components/MissionPanel";
 import { ResourcePanel } from "./components/ResourcePanel";
 import { SimulationPanel } from "./components/SimulationPanel";
 import { ToolStatus } from "./components/ToolStatus";
+import { demoStateFromSearch, loadDemoState } from "./demo/loadDemoState";
 import { registerEdenTools } from "./webmcp/registerEdenTools";
 
 export default function App() {
+  const demoLoaded = useRef(false);
+
+  useEffect(() => {
+    if (demoLoaded.current) return;
+    demoLoaded.current = true;
+    const demoState = demoStateFromSearch(window.location.search);
+    if (demoState) loadDemoState(demoState);
+  }, []);
+
   useEffect(() => registerEdenTools(), []);
 
   return (

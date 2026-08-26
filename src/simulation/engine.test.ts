@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createConnection, createModule } from "../domain/catalog";
 import { createDefaultDesign } from "../domain/scenarios";
+import { compareSimulationRuns } from "./compareRuns";
 import { runSimulation } from "./engine";
 
 const SEED = 424_242;
@@ -69,7 +70,7 @@ describe("EDEN deterministic simulator", () => {
       createModule("storage", "storage-b", { x: 0, y: 0 }, "agent"),
     );
     design.connections.push(
-      createConnection("storage-b", "habitat-core", "water", "agent"),
+      createConnection("storage-b", "habitat-core", "oxygen", "agent"),
     );
     design.version += 1;
 
@@ -79,5 +80,41 @@ describe("EDEN deterministic simulator", () => {
     expect(result.lastSol).toBe(500);
     expect(result.metrics.totalCostUsd).toBe(7_900_000);
     expect(result.metrics.totalMassKg).toBe(40_500);
+  });
+
+  it("does not let a water-only storage link contribute oxygen inventory", () => {
+    const design = addConnectedMicroreactor();
+    design.modules.push(
+      createModule("storage", "storage-b", { x: 0, y: 0 }, "agent"),
+    );
+    design.connections.push(
+      createConnection("storage-b", "habitat-core", "water", "agent"),
+    );
+    design.version += 1;
+
+    const result = runSimulation(design, SEED);
+
+    expect(result.status).toBe("failure");
+    expect(result.failure?.code).toBe("OXYGEN_RESERVE_BREACH");
+    expect(result.lastSol).toBe(300);
+    expect(result.metrics.finalResources.waterKg).toBeGreaterThan(0);
+  });
+
+  it("captures scenario markers and immutable design snapshots for comparisons", () => {
+    const starter = createDefaultDesign();
+    const first = runSimulation(starter, SEED);
+    const repaired = addConnectedMicroreactor();
+    const second = runSimulation(repaired, SEED);
+    repaired.modules[0].label = "Mutated after run";
+
+    const comparison = compareSimulationRuns(first, second);
+
+    expect(first.scenarioMarkers).toEqual([
+      expect.objectContaining({ startSol: 80, endSol: 124 }),
+      expect.objectContaining({ startSol: 280, endSol: 304 }),
+    ]);
+    expect(second.designSnapshot.modules[0].label).not.toBe("Mutated after run");
+    expect(comparison.delta.survivalSols).toBe(206);
+    expect(comparison.designDiff.addedModuleIds).toContain("reactor-a");
   });
 });
