@@ -36,6 +36,8 @@ export function RunComparisonPanel() {
   const comparison = compareSimulationRuns(first, second);
   const diff = comparison.designDiff;
   const partialReserveHorizon = first.lastSol !== second.lastSol;
+  const firstCause = first.failure?.code ?? "MISSION_SURVIVED";
+  const secondCause = second.failure?.code ?? "MISSION_SURVIVED";
 
   return (
     <section className="comparison-panel" aria-label="Run comparison">
@@ -95,7 +97,9 @@ export function RunComparisonPanel() {
       </div>
 
       <p className="comparison-reserve-note">
-        Water margin {signed(comparison.delta.waterReserveSols, 1)} sol · O₂ margin{" "}
+        Cause {firstCause} → {secondCause} · Battery{" "}
+        {signed(comparison.delta.minBatteryPercent, 1)} pp · Water{" "}
+        {signed(comparison.delta.waterReserveSols, 1)} sol · O₂{" "}
         {signed(comparison.delta.oxygenReserveSols, 1)} sol
         {partialReserveHorizon
           ? ` · *partial horizons (S${first.lastSol} vs S${second.lastSol})`

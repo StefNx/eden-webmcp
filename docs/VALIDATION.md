@@ -14,11 +14,11 @@ Current result:
 
 - clean `npm ci --no-audit --no-fund`: pass;
 - Oxlint: pass;
-- Vitest: 4 files, 13 tests, all pass;
+- Vitest: 4 files, 14 tests, all pass;
 - TypeScript project build: pass;
 - Vite production build: pass;
 - production `dist/` preview at `/?demo=success`: pass with zero console errors;
-- production bundle: 497.25 kB JavaScript / 35.67 kB CSS before gzip.
+- production bundle: 498.12 kB JavaScript / 35.67 kB CSS before gzip.
 - GitHub Actions PR quality job: pass from `npm ci`.
 - npm audit: zero known vulnerabilities.
 
@@ -64,7 +64,9 @@ Verified:
   panel state;
 - full tool flow reaches S94 failure → S300 failure → S500 success;
 - a human greenhouse lock rejects an agent update;
-- first/final comparison reports +406 survived sols and the exact design diff.
+- first/final comparison reports +406 survived sols and the exact design diff;
+- comparison output is compact, rounds reserve deltas and omits full telemetry
+  and design snapshots.
 
 ## Browser validation
 
@@ -81,6 +83,14 @@ Pass in the Codex in-app browser at `http://127.0.0.1:4173/?demo=success`:
 
 The local in-app browser build used for this check did not expose
 `document.modelContext`; the UI correctly reported “WebMCP unavailable.”
+
+### Native Chrome preflight
+
+Chrome 151.0.7922.174 is installed. In the current user profile,
+`document.modelContext` is absent because the local WebMCP testing flag is not
+enabled. Chrome documents the required manual setting at
+`chrome://flags/#enable-webmcp-testing`; enable it and relaunch before the final
+native smoke test. EDEN's fallback state rendered correctly in this profile.
 
 ### Browser with WebMCP-shaped runtime
 

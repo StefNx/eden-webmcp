@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { MODULE_CATALOG } from "../domain/catalog";
 import { MODULE_KINDS, RESOURCE_KINDS } from "../domain/types";
-import type { Point, SimulationRun } from "../domain/types";
+import type { Point, RunComparison, SimulationRun } from "../domain/types";
 import { compareSimulationRuns } from "../simulation/compareRuns";
 import { edenStore } from "../store/edenStore";
 
@@ -76,6 +76,37 @@ function summarizeRun(run: SimulationRun) {
     metrics: run.metrics,
     scenarioMarkers: run.scenarioMarkers,
     notableEvents: run.events.slice(-8),
+  };
+}
+
+function rounded(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function summarizeComparisonRun(run: SimulationRun) {
+  return {
+    id: run.id,
+    designVersion: run.designVersion,
+    status: run.status,
+    lastSol: run.lastSol,
+    cause: run.failure?.code ?? "MISSION_SURVIVED",
+    costUsd: run.metrics.totalCostUsd,
+    massKg: run.metrics.totalMassKg,
+    minBatteryPercent: rounded(run.metrics.minBatteryPercent),
+    minWaterReserveSols: rounded(run.metrics.minWaterReserveSols),
+    minOxygenReserveSols: rounded(run.metrics.minOxygenReserveSols),
+  };
+}
+
+function summarizeComparison(comparison: RunComparison): RunComparison {
+  return {
+    ...comparison,
+    delta: {
+      ...comparison.delta,
+      minBatteryPercent: rounded(comparison.delta.minBatteryPercent),
+      waterReserveSols: rounded(comparison.delta.waterReserveSols),
+      oxygenReserveSols: rounded(comparison.delta.oxygenReserveSols),
+    },
   };
 }
 
@@ -458,11 +489,15 @@ function compareRunsTool(): WebMcpTool {
         if (!first || !second) {
           throw new Error("One or both run IDs are unavailable.");
         }
-        return ok("Run comparison.", {
-          first: summarizeRun(first),
-          second: summarizeRun(second),
-          comparison: compareSimulationRuns(first, second),
-        });
+        const comparison = compareSimulationRuns(first, second);
+        return ok(
+          `Compared design v${first.designVersion} ${first.failure?.code ?? "MISSION_SURVIVED"} to v${second.designVersion} ${second.failure?.code ?? "MISSION_SURVIVED"}.`,
+          {
+            first: summarizeComparisonRun(first),
+            second: summarizeComparisonRun(second),
+            comparison: summarizeComparison(comparison),
+          },
+        );
       }),
   };
 }

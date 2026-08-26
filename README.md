@@ -56,7 +56,7 @@ npm run check
 npm run preview
 ```
 
-`npm run check` runs lint, 13 deterministic/domain/WebMCP tests, TypeScript and
+`npm run check` runs lint, 14 deterministic/domain/WebMCP tests, TypeScript and
 the Vite production build. The adapter test drives a standards-shaped
 `ModelContext`, verifies 10 base tools, dynamic 11th/12th tool registration,
 tool execution, observability and abort cleanup.
@@ -65,8 +65,11 @@ tool execution, observability and abort cleanup.
 
 Deploy the app over HTTPS and open it in ChatGPT's WebMCP-capable in-app
 browser, or use Chrome with WebMCP enabled through its experimental flag or
-origin trial. The header badge reports the live registration state; the human
-UI remains fully functional when the experimental API is absent.
+origin trial. For local development, follow
+[Chrome's WebMCP guide](https://developer.chrome.com/docs/ai/webmcp) and enable
+`chrome://flags/#enable-webmcp-testing` and relaunch. The header badge reports
+the live registration state; the human UI remains fully functional when the
+experimental API is absent.
 
 Prompt:
 

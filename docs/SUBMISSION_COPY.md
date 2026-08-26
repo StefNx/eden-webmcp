@@ -88,7 +88,7 @@ inspectable instead of theatrical.
 - abortable state-dependent tool registration;
 - four synchronized telemetry charts with scenario and failure markers;
 - static HTTPS deployment, no backend, account, secret or external runtime API;
-- 13 automated tests plus 1440×900 and 1920×1080 browser validation.
+- 14 automated tests plus 1440×900 and 1920×1080 browser validation.
 
 ## Challenges and lessons
 
