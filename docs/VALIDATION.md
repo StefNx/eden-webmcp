@@ -17,8 +17,10 @@ Current result:
 - Vitest: 4 files, 13 tests, all pass;
 - TypeScript project build: pass;
 - Vite production build: pass;
+- production `dist/` preview at `/?demo=success`: pass with zero console errors;
 - production bundle: 497.25 kB JavaScript / 35.67 kB CSS before gzip.
 - GitHub Actions PR quality job: pass from `npm ci`.
+- npm audit: zero known vulnerabilities.
 
 The result above was produced from the committed lockfile after replacing the
 local dependency tree with `npm ci`.
