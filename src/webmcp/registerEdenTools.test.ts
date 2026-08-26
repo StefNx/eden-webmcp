@@ -39,10 +39,13 @@ async function executeTool(
   modelContext: FakeModelContext,
   name: string,
   input: Record<string, unknown> = {},
+  withExecutionOptions = true,
 ): Promise<unknown> {
   const tool = modelContext.tools.get(name);
   expect(tool, `${name} should be registered`).toBeDefined();
-  return tool!.execute(input, { signal: new AbortController().signal });
+  return withExecutionOptions
+    ? tool!.execute(input, { signal: new AbortController().signal })
+    : tool!.execute(input);
 }
 
 describe("WebMCP adapter", () => {
@@ -79,6 +82,31 @@ describe("WebMCP adapter", () => {
 
     cleanup();
     expect(modelContext.tools.size).toBe(0);
+  });
+
+  it("accepts Chrome native calls that omit execution options", async () => {
+    const modelContext = new FakeModelContext();
+    const cleanup = registerEdenTools(modelContext);
+    await flushRegistrations();
+
+    const result = await executeTool(
+      modelContext,
+      "get_mission_state",
+      {},
+      false,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      message: "Current EDEN mission state.",
+    });
+    expect(edenStore.getState().toolInvocations[0]).toMatchObject({
+      toolName: "get_mission_state",
+      status: "success",
+      validatedArguments: {},
+    });
+
+    cleanup();
   });
 
   it("executes the complete causal repair loop through registered tools", async () => {

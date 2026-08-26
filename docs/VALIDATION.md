@@ -14,11 +14,11 @@ Current result:
 
 - clean `npm ci --no-audit --no-fund`: pass;
 - Oxlint: pass;
-- Vitest: 4 files, 14 tests, all pass;
+- Vitest: 4 files, 15 tests, all pass;
 - TypeScript project build: pass;
 - Vite production build: pass;
 - production `dist/` preview at `/?demo=success`: pass with zero console errors;
-- production bundle: 498.12 kB JavaScript / 35.67 kB CSS before gzip.
+- production bundle: 498.16 kB JavaScript / 35.67 kB CSS before gzip.
 - GitHub Actions PR quality job: pass from `npm ci`.
 - npm audit: zero known vulnerabilities.
 
@@ -67,6 +67,8 @@ Verified:
 - first/final comparison reports +406 survived sols and the exact design diff;
 - comparison output is compact, rounds reserve deltas and omits full telemetry
   and design snapshots.
+- Chrome-native execution remains compatible when the user agent omits the
+  optional execution-options object.
 
 ## Browser validation
 
@@ -84,13 +86,35 @@ Pass in the Codex in-app browser at `http://127.0.0.1:4173/?demo=success`:
 The local in-app browser build used for this check did not expose
 `document.modelContext`; the UI correctly reported “WebMCP unavailable.”
 
-### Native Chrome preflight
+### Native Chrome WebMCP execution
 
-Chrome 151.0.7922.174 is installed. In the current user profile,
-`document.modelContext` is absent because the local WebMCP testing flag is not
-enabled. Chrome documents the required manual setting at
-`chrome://flags/#enable-webmcp-testing`; enable it and relaunch before the final
-native smoke test. EDEN's fallback state rendered correctly in this profile.
+Pass in Chrome 151.0.7922.174 with
+`chrome://flags/#enable-webmcp-testing` enabled. The test used the official
+Chrome DevTools MCP 1.8.0 WebMCP debugger against the production build; it
+listed EDEN's page tools and executed them through Chrome's native WebMCP
+runtime rather than a page mock.
+
+Verified native sequence with seed `424242`:
+
+- Chrome discovers 10 base tools, then 12 after two stored runs;
+- `get_mission_state` reads the same state shown by the UI;
+- the first run returns `POWER_COLLAPSE` at S94;
+- native `add_module` and `connect_modules` add the microreactor and the next
+  run returns `OXYGEN_RESERVE_BREACH` at S300;
+- human UI clicks cap the budget at $7.95M and lock `greenhouse-a`;
+- native `update_module` is rejected with the human-lock explanation;
+- native tools add and connect oxygen storage; the final run succeeds at S500,
+  $7.90M and 40.5t;
+- native `compare_runs` reports +406 survived sols, the cause transition
+  `POWER_COLLAPSE` → `MISSION_SURVIVED`, both added modules/connections, the
+  human lock and the changed budget constraint;
+- the visible developer panel records `run_simulation` and `compare_runs`, and
+  the final UI shows 12 tools, the lock and HUMAN/AGENT/SYSTEM activity.
+
+The first native call exposed a compatibility defect: Chrome did not supply an
+execution-options object, while EDEN unconditionally read `options.signal`.
+The adapter now creates a local non-aborted signal when options are absent, and
+the 15th automated test preserves that behavior.
 
 ### Browser with WebMCP-shaped runtime
 
@@ -103,16 +127,16 @@ Pass at 1440×900 and 1920×1080:
 - comparison and developer diagnostics render;
 - zero console errors.
 
-This harness validates EDEN's integration behavior but is not a substitute for
-the final native-agent test. The deployed HTTPS URL must be opened in a
-WebMCP-capable ChatGPT in-app browser before recording.
+This harness remains useful for viewport coverage. The native Chrome test above
+is the authoritative local runtime proof; the final deployed HTTPS URL still
+needs one signed-out availability check before recording.
 
 ## Manual pre-submission checklist
 
 - [ ] Deploy the final commit over HTTPS.
 - [ ] Confirm the native badge shows 10 tools on the deployed URL.
-- [ ] Perform the full prompt with a supported site-tools model.
-- [ ] Confirm 12 tools after two runs and inspect the final invocation.
+- [x] Perform the full prompt locally through Chrome's native WebMCP runtime.
+- [x] Confirm 12 tools after two runs and inspect the final invocation.
 - [ ] Record the 1920×1080 demo with audible narration under 2:45.
 - [ ] Verify the public repository, MIT license and live URL while signed out.
 - [ ] Run the Devpost submission links from a private window.

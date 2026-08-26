@@ -18,7 +18,7 @@ declare global {
     annotations?: WebMcpToolAnnotations;
     execute: (
       input: Record<string, unknown>,
-      options: WebMcpExecuteOptions,
+      options?: WebMcpExecuteOptions,
     ) => unknown | Promise<unknown>;
   }
 

@@ -56,10 +56,11 @@ npm run check
 npm run preview
 ```
 
-`npm run check` runs lint, 14 deterministic/domain/WebMCP tests, TypeScript and
+`npm run check` runs lint, 15 deterministic/domain/WebMCP tests, TypeScript and
 the Vite production build. The adapter test drives a standards-shaped
 `ModelContext`, verifies 10 base tools, dynamic 11th/12th tool registration,
-tool execution, observability and abort cleanup.
+tool execution, observability, abort cleanup and the Chrome-native calling form
+where execution options are omitted.
 
 ## Test with a WebMCP agent
 
@@ -87,6 +88,11 @@ EDEN registers 10 narrow base tools:
 `analyze_latest_run` appears after the first run and `compare_runs` after the
 second. Both use abortable registration. Every invocation is visible in the
 developer panel with validated arguments, result, status and design version.
+
+The production build has also passed the complete 10→12 tool story through
+Chrome 151's native WebMCP runtime and Chrome DevTools MCP: S94 power failure,
+S300 oxygen failure, human-lock rejection, S500 success and first/final run
+comparison. See [Validation evidence](docs/VALIDATION.md) for the exact proof.
 
 WebMCP is an experimental proposed standard. EDEN follows the current
 [`document.modelContext.registerTool()` specification](https://webmachinelearning.github.io/webmcp/)

@@ -88,7 +88,8 @@ inspectable instead of theatrical.
 - abortable state-dependent tool registration;
 - four synchronized telemetry charts with scenario and failure markers;
 - static HTTPS deployment, no backend, account, secret or external runtime API;
-- 14 automated tests plus 1440×900 and 1920×1080 browser validation.
+- 15 automated tests, native Chrome WebMCP execution, plus 1440×900 and
+  1920×1080 browser validation.
 
 ## Challenges and lessons
 
@@ -105,6 +106,10 @@ made comparison trustworthy.
 Finally, experimental browser APIs need observable degradation. When WebMCP is
 absent, EDEN remains fully usable and says so; when it is present, judges can see
 the live tool count and exact last invocation.
+
+Native Chrome testing caught one real interoperability edge: the runtime may
+omit the optional execution context. EDEN now supplies its own non-aborted
+signal in that case, and a regression test protects the fix.
 
 ## Known limitations
 

@@ -34,8 +34,10 @@ function instrumentTool(tool: WebMcpTool): WebMcpTool {
     execute: async (input, options) => {
       const invocationId = edenStore.actions.beginToolInvocation(tool.name, input);
       try {
-        options.signal.throwIfAborted();
-        const result = await tool.execute(input, options);
+        const executionOptions =
+          options ?? { signal: new AbortController().signal };
+        executionOptions.signal.throwIfAborted();
+        const result = await tool.execute(input, executionOptions);
         const envelope = result as {
           ok?: boolean;
           validationError?: boolean;
