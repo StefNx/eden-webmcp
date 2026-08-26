@@ -129,6 +129,9 @@ signal in that case, and a regression test protects the fix.
 
 Use the repeatable `/?demo=starter`, `/?demo=failure` and `/?demo=success`
 routes for screenshots. The repository root contains the MIT license,
-installation instructions and Netlify configuration. Add the final public live
-URL, public repository URL and public YouTube demo URL to the Devpost form only
-after verifying each while signed out.
+installation instructions and Netlify configuration.
+
+- Live application: [https://eden-webmcp.netlify.app](https://eden-webmcp.netlify.app)
+- Public repository: [https://github.com/StefNx/eden-webmcp](https://github.com/StefNx/eden-webmcp)
+- Demo video: add the final public YouTube URL after recording and verifying it
+  while signed out.

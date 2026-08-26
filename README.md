@@ -11,6 +11,10 @@ the crew survives.
 EDEN is not a chatbot and does not call the OpenAI API. It is a static React app
 that progressively enhances itself when `document.modelContext` is available.
 
+**Live app:** [eden-webmcp.netlify.app](https://eden-webmcp.netlify.app)
+
+**Public source:** [StefNx/eden-webmcp](https://github.com/StefNx/eden-webmcp)
+
 ## The two-and-a-half-minute story
 
 1. The starter habitat fails at sol 94 during a 45-sol dust storm.
@@ -144,6 +148,9 @@ npm run build
 Publish `dist/` on an HTTPS static host. `netlify.toml` pins Node 22.19, runs the
 production build and adds baseline security headers. Vite's preview server is
 for local validation only.
+
+The challenge build is deployed publicly at
+[https://eden-webmcp.netlify.app](https://eden-webmcp.netlify.app).
 
 ## Scope and honesty
 

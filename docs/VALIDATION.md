@@ -86,6 +86,20 @@ Pass in the Codex in-app browser at `http://127.0.0.1:4173/?demo=success`:
 The local in-app browser build used for this check did not expose
 `document.modelContext`; the UI correctly reported “WebMCP unavailable.”
 
+### Public HTTPS deployment
+
+Pass at [https://eden-webmcp.netlify.app](https://eden-webmcp.netlify.app):
+
+- unauthenticated requests return HTTP 200 for `/`, `?demo=starter`,
+  `?demo=failure` and `?demo=success`;
+- the production deployment was built from commit `d7216c4` using
+  `netlify.toml` and the checked production build command;
+- Chrome 151 with WebMCP enabled reports 10 registered EDEN tools on the public
+  `?demo=starter` route;
+- the public GitHub repository is available at
+  [StefNx/eden-webmcp](https://github.com/StefNx/eden-webmcp), including the MIT
+  license and green CI.
+
 ### Native Chrome WebMCP execution
 
 Pass in Chrome 151.0.7922.174 with
@@ -128,15 +142,16 @@ Pass at 1440×900 and 1920×1080:
 - zero console errors.
 
 This harness remains useful for viewport coverage. The native Chrome test above
-is the authoritative local runtime proof; the final deployed HTTPS URL still
-needs one signed-out availability check before recording.
+is the authoritative complete runtime proof; the public HTTPS smoke test proves
+that the submission origin exposes the same 10-tool starter surface.
 
 ## Manual pre-submission checklist
 
-- [ ] Deploy the final commit over HTTPS.
-- [ ] Confirm the native badge shows 10 tools on the deployed URL.
+- [x] Deploy the final commit over HTTPS.
+- [x] Confirm the native badge shows 10 tools on the deployed URL.
 - [x] Perform the full prompt locally through Chrome's native WebMCP runtime.
 - [x] Confirm 12 tools after two runs and inspect the final invocation.
 - [ ] Record the 1920×1080 demo with audible narration under 2:45.
-- [ ] Verify the public repository, MIT license and live URL while signed out.
+- [x] Verify the public repository, MIT license and live URL without relying on
+  an authenticated browser session.
 - [ ] Run the Devpost submission links from a private window.
