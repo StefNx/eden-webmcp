@@ -18,6 +18,7 @@ Current result:
 - TypeScript project build: pass;
 - Vite production build: pass;
 - production bundle: 497.25 kB JavaScript / 35.67 kB CSS before gzip.
+- GitHub Actions PR quality job: pass from `npm ci`.
 
 The result above was produced from the committed lockfile after replacing the
 local dependency tree with `npm ci`.
