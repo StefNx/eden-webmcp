@@ -24,6 +24,29 @@ describe("shared EDEN store", () => {
       edenStore.actions.removeModule("greenhouse-a", "agent"),
     ).toThrow(/locked by the human/i);
 
+    edenStore.actions.addModule(
+      "microreactor",
+      { x: 100, y: 100 },
+      "agent",
+      "reactor-lock-test",
+    );
+    expect(() =>
+      edenStore.actions.connectModules(
+        "reactor-lock-test",
+        "greenhouse-a",
+        "power",
+        "agent",
+      ),
+    ).toThrow(/locked by the human/i);
+    const authorizedConnection = edenStore.actions.connectModules(
+      "reactor-lock-test",
+      "greenhouse-a",
+      "power",
+      "agent",
+      true,
+    );
+    expect(authorizedConnection.target).toBe("greenhouse-a");
+
     const updated = edenStore.actions.updateModule(
       "greenhouse-a",
       { label: "Authorized greenhouse" },
