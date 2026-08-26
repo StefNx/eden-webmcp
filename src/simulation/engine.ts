@@ -1,4 +1,5 @@
 import { MODULE_CATALOG, scaledCost, scaledMass } from "../domain/catalog";
+import { cloneDesign } from "../domain/design";
 import { SCENARIOS } from "../domain/scenarios";
 import type {
   DesignValidation,
@@ -14,23 +15,11 @@ import type {
   SimulationRun,
   TimelinePoint,
 } from "../domain/types";
+import {
+  CREW_RATES,
+  SIMULATION_COEFFICIENTS,
+} from "./assumptions";
 import { mulberry32 } from "./prng";
-
-const CREW_RATES = {
-  waterKg: 3.45,
-  wastewaterKg: 3.1,
-  oxygenKg: 0.84,
-  co2Kg: 1.0,
-  foodKg: 0.62,
-} as const;
-
-const RECYCLER_RECOVERY = 0.98;
-const GREENHOUSE_FOOD_KG = 4.5;
-const GREENHOUSE_WATER_KG = 4;
-const GREENHOUSE_CO2_KG = 3;
-const OXYGEN_WATER_RATIO = 1.125;
-const BATTERY_EFFICIENCY = 0.94;
-const CO2_CRITICAL_KG_PER_CREW = 3;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -45,20 +34,115 @@ function makeRunId(designVersion: number, seed: number): string {
   return `run-v${designVersion}-s${seed}-${Date.now().toString(36)}`;
 }
 
-function activeConnectionModuleIds(design: HabitatDesign): Set<string> {
-  const ids = new Set<string>(["habitat-core"]);
-  for (const connection of design.connections) {
-    ids.add(connection.source);
-    ids.add(connection.target);
-  }
-  return ids;
+export interface ResourceTopology {
+  habitatId: string | null;
+  reachableByResource: Record<ResourceKind, Set<string>>;
+  operationalModuleIds: Set<string>;
+  unconnectedModuleIds: string[];
 }
+
+function reachableForResource(
+  design: HabitatDesign,
+  resource: ResourceKind,
+  habitatId: string | null,
+): Set<string> {
+  if (!habitatId) return new Set<string>();
+  const enabledIds = new Set(
+    design.modules.filter((module) => module.enabled).map((module) => module.id),
+  );
+  const adjacency = new Map<string, Set<string>>();
+  for (const connection of design.connections) {
+    const source = design.modules.find(
+      (module) => module.id === connection.source,
+    );
+    const target = design.modules.find(
+      (module) => module.id === connection.target,
+    );
+    if (
+      connection.resource !== resource ||
+      !source ||
+      !target ||
+      !enabledIds.has(connection.source) ||
+      !enabledIds.has(connection.target) ||
+      !MODULE_CATALOG[source.kind].outputs.includes(resource) ||
+      !MODULE_CATALOG[target.kind].inputs.includes(resource)
+    ) {
+      continue;
+    }
+    const sourceNeighbors = adjacency.get(connection.source) ?? new Set<string>();
+    const targetNeighbors = adjacency.get(connection.target) ?? new Set<string>();
+    sourceNeighbors.add(connection.target);
+    targetNeighbors.add(connection.source);
+    adjacency.set(connection.source, sourceNeighbors);
+    adjacency.set(connection.target, targetNeighbors);
+  }
+
+  const reachable = new Set<string>([habitatId]);
+  const queue = [habitatId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    for (const neighbor of adjacency.get(current) ?? []) {
+      if (reachable.has(neighbor)) continue;
+      reachable.add(neighbor);
+      queue.push(neighbor);
+    }
+  }
+  return reachable;
+}
+
+export function analyzeResourceTopology(design: HabitatDesign): ResourceTopology {
+  const habitatId =
+    design.modules.find((module) => module.kind === "habitat" && module.enabled)?.id ??
+    null;
+  const reachableByResource = Object.fromEntries(
+    RESOURCE_KINDS_FOR_TOPOLOGY.map((resource) => [
+      resource,
+      reachableForResource(design, resource, habitatId),
+    ]),
+  ) as Record<ResourceKind, Set<string>>;
+  const operationalModuleIds = new Set<string>();
+  if (habitatId) operationalModuleIds.add(habitatId);
+
+  for (const module of design.modules) {
+    if (!module.enabled || module.kind === "habitat") continue;
+    const spec = MODULE_CATALOG[module.kind];
+    const integrated =
+      module.kind === "storage"
+        ? ["water", "oxygen", "food", "spares"].some((resource) =>
+            reachableByResource[resource as ResourceKind].has(module.id),
+          )
+        : reachableByResource[spec.primaryResource].has(module.id);
+    if (integrated) operationalModuleIds.add(module.id);
+  }
+
+  const unconnectedModuleIds = design.modules
+    .filter((module) => module.enabled && module.kind !== "habitat")
+    .filter((module) => !operationalModuleIds.has(module.id))
+    .map((module) => module.id);
+
+  return {
+    habitatId,
+    reachableByResource,
+    operationalModuleIds,
+    unconnectedModuleIds,
+  };
+}
+
+const RESOURCE_KINDS_FOR_TOPOLOGY: ResourceKind[] = [
+  "power",
+  "water",
+  "wastewater",
+  "oxygen",
+  "co2",
+  "food",
+  "spares",
+];
 
 export function validateDesign(design: HabitatDesign): DesignValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
   const ids = new Set<string>();
-  const connectedIds = activeConnectionModuleIds(design);
 
   for (const module of design.modules) {
     if (ids.has(module.id)) errors.push(`Duplicate module id: ${module.id}`);
@@ -91,19 +175,17 @@ export function validateDesign(design: HabitatDesign): DesignValidation {
     }
   }
 
-  const unconnectedModuleIds = design.modules
-    .filter((module) => module.enabled && module.kind !== "habitat")
-    .filter((module) => !connectedIds.has(module.id))
-    .map((module) => module.id);
+  const topology = analyzeResourceTopology(design);
+  const { unconnectedModuleIds } = topology;
 
   if (unconnectedModuleIds.length > 0) {
     warnings.push(
-      `${unconnectedModuleIds.length} enabled module(s) are disconnected and ignored by the simulator.`,
+      `${unconnectedModuleIds.length} enabled module(s) lack a primary-resource path to the Habitat Core and are ignored by the simulator.`,
     );
   }
 
   const operational = design.modules.filter(
-    (module) => module.enabled && connectedIds.has(module.id),
+    (module) => module.enabled && topology.operationalModuleIds.has(module.id),
   );
   for (const requiredKind of [
     "solar",
@@ -153,14 +235,20 @@ function moduleLevelTotal(modules: HabitatModule[], kind: ModuleKind): number {
 }
 
 function accumulateInventory(
-  modules: HabitatModule[],
+  design: HabitatDesign,
+  topology: ResourceTopology,
   field: "initialInventory" | "inventoryCapacity",
   resource: ResourceKind,
 ): number {
-  return modules.reduce((sum, module) => {
-    const amount = MODULE_CATALOG[module.kind][field]?.[resource] ?? 0;
-    return sum + amount * module.level;
-  }, 0);
+  return design.modules
+    .filter(
+      (module) =>
+        module.enabled && topology.reachableByResource[resource].has(module.id),
+    )
+    .reduce((sum, module) => {
+      const amount = MODULE_CATALOG[module.kind][field]?.[resource] ?? 0;
+      return sum + amount * module.level;
+    }, 0);
 }
 
 function scenarioAtSol(
@@ -232,12 +320,14 @@ function makeFailedRun(
   return {
     id: makeRunId(design.version, seed),
     designVersion: design.version,
+    designSnapshot: cloneDesign(design),
     seed,
     status: "failure",
     lastSol: 0,
     createdAt: new Date().toISOString(),
     timeline: [{ sol: 0, ...initial }],
     events: [{ sol: 0, severity: "critical", code: failed.code, message: failed.summary }],
+    scenarioMarkers: [],
     failure: failed,
     metrics: {
       totalCostUsd: validation.totalCostUsd,
@@ -267,24 +357,24 @@ export function runSimulation(
     });
   }
 
-  const connectedIds = activeConnectionModuleIds(design);
+  const topology = analyzeResourceTopology(design);
   const connectedModules = design.modules.filter(
-    (module) => module.enabled && connectedIds.has(module.id),
+    (module) => module.enabled && topology.operationalModuleIds.has(module.id),
   );
   const random = mulberry32(seed);
   const crew = design.constraints.crew;
 
   const capacities = {
-    water: accumulateInventory(connectedModules, "inventoryCapacity", "water"),
-    oxygen: accumulateInventory(connectedModules, "inventoryCapacity", "oxygen"),
-    food: accumulateInventory(connectedModules, "inventoryCapacity", "food"),
-    spares: accumulateInventory(connectedModules, "inventoryCapacity", "spares"),
+    water: accumulateInventory(design, topology, "inventoryCapacity", "water"),
+    oxygen: accumulateInventory(design, topology, "inventoryCapacity", "oxygen"),
+    food: accumulateInventory(design, topology, "inventoryCapacity", "food"),
+    spares: accumulateInventory(design, topology, "inventoryCapacity", "spares"),
   };
 
-  let waterKg = accumulateInventory(connectedModules, "initialInventory", "water");
-  let oxygenKg = accumulateInventory(connectedModules, "initialInventory", "oxygen");
-  let foodKg = accumulateInventory(connectedModules, "initialInventory", "food");
-  let sparesKg = accumulateInventory(connectedModules, "initialInventory", "spares");
+  let waterKg = accumulateInventory(design, topology, "initialInventory", "water");
+  let oxygenKg = accumulateInventory(design, topology, "initialInventory", "oxygen");
+  let foodKg = accumulateInventory(design, topology, "initialInventory", "food");
+  let sparesKg = accumulateInventory(design, topology, "initialInventory", "spares");
   let wastewaterKg = crew * CREW_RATES.wastewaterKg;
   let co2Kg = 0;
 
@@ -298,7 +388,8 @@ export function runSimulation(
       sum + (MODULE_CATALOG[module.kind].batteryMaxFlowKwhPerSol ?? 0) * module.level,
     0,
   );
-  let batteryKwh = batteryCapacityKwh * 0.65;
+  let batteryKwh =
+    batteryCapacityKwh * SIMULATION_COEFFICIENTS.initialBatteryFraction;
 
   const timeline: TimelinePoint[] = [];
   const events: SimulationEventLog[] = [];
@@ -366,7 +457,7 @@ export function runSimulation(
     if (generatedKwh >= totalDemand) {
       const room = batteryCapacityKwh - batteryKwh;
       const charge = Math.min(
-        (generatedKwh - totalDemand) * BATTERY_EFFICIENCY,
+        (generatedKwh - totalDemand) * SIMULATION_COEFFICIENTS.batteryEfficiency,
         room,
         batteryMaxFlowKwh,
       );
@@ -375,12 +466,12 @@ export function runSimulation(
     } else {
       const deficit = totalDemand - generatedKwh;
       const discharge = Math.min(
-        deficit / BATTERY_EFFICIENCY,
+        deficit / SIMULATION_COEFFICIENTS.batteryEfficiency,
         batteryKwh,
         batteryMaxFlowKwh,
       );
       batteryKwh -= discharge;
-      availableKwh += discharge * BATTERY_EFFICIENCY;
+      availableKwh += discharge * SIMULATION_COEFFICIENTS.batteryEfficiency;
     }
 
     const criticalScale =
@@ -389,7 +480,7 @@ export function runSimulation(
     const greenhouseScale =
       greenhouseDemand > 0 ? clamp(optionalPower / greenhouseDemand, 0, 1) : 1;
 
-    if (criticalScale < 0.7) {
+    if (criticalScale < SIMULATION_COEFFICIENTS.criticalPowerScale) {
       lowCriticalPowerStreak += 1;
       criticalPowerDeficitSols += 1;
     } else {
@@ -397,10 +488,22 @@ export function runSimulation(
     }
 
     const greenhouseCount = count("greenhouse");
-    const greenhouseFood = GREENHOUSE_FOOD_KG * greenhouseCount * greenhouseScale;
-    const greenhouseOxygen = 2.5 * greenhouseCount * greenhouseScale;
-    const greenhouseWater = GREENHOUSE_WATER_KG * greenhouseCount * greenhouseScale;
-    const greenhouseCo2 = GREENHOUSE_CO2_KG * greenhouseCount * greenhouseScale;
+    const greenhouseFood =
+      SIMULATION_COEFFICIENTS.greenhouseFoodKgPerSol *
+      greenhouseCount *
+      greenhouseScale;
+    const greenhouseOxygen =
+      SIMULATION_COEFFICIENTS.greenhouseOxygenKgPerSol *
+      greenhouseCount *
+      greenhouseScale;
+    const greenhouseWater =
+      SIMULATION_COEFFICIENTS.greenhouseWaterKgPerSol *
+      greenhouseCount *
+      greenhouseScale;
+    const greenhouseCo2 =
+      SIMULATION_COEFFICIENTS.greenhouseCo2KgPerSol *
+      greenhouseCount *
+      greenhouseScale;
 
     foodKg += greenhouseFood;
     oxygenKg += greenhouseOxygen;
@@ -413,7 +516,8 @@ export function runSimulation(
       criticalScale;
     const processedWastewater = Math.min(wastewaterKg, recyclerCapacity);
     wastewaterKg -= processedWastewater;
-    waterKg += processedWastewater * RECYCLER_RECOVERY;
+    waterKg +=
+      processedWastewater * SIMULATION_COEFFICIENTS.recyclerRecovery;
 
     const crewOxygenNeed = crew * CREW_RATES.oxygenKg;
     const desiredOxygenProduction = Math.max(
@@ -428,7 +532,8 @@ export function runSimulation(
       desiredOxygenProduction,
       oxygenProductionCapacity,
     );
-    const oxygenWaterUse = oxygenProduced * OXYGEN_WATER_RATIO;
+    const oxygenWaterUse =
+      oxygenProduced * SIMULATION_COEFFICIENTS.oxygenWaterRatio;
     if (waterKg >= oxygenWaterUse) {
       waterKg -= oxygenWaterUse;
       oxygenKg += oxygenProduced;
@@ -490,20 +595,23 @@ export function runSimulation(
     };
     timeline.push({ sol, ...finalSnapshot });
 
-    if (lowCriticalPowerStreak >= 3) {
+    if (
+      lowCriticalPowerStreak >=
+      SIMULATION_COEFFICIENTS.criticalPowerStreakSols
+    ) {
       finalFailure = failure(
         "POWER_COLLAPSE",
         sol,
         "Critical life-support buses were underpowered for three consecutive sols.",
         [
-          `Generation ${round(generatedKwh)} kWh vs. demand ${round(totalDemand)} kWh.`,
-          `Battery reserve ${round(batteryPercent)}%.`,
+          `Critical load: ${round(criticalDemand)} kWh/sol.`,
+          `Available generation: ${round(generatedKwh)} kWh/sol; total demand: ${round(totalDemand)} kWh/sol.`,
+          `Battery remaining: ${round(batteryPercent)}%; deficit duration: ${lowCriticalPowerStreak} sols.`,
           ...conditions.labels,
         ],
         [
-          "Add dust-independent generation such as a microreactor.",
-          "Add battery capacity and/or reduce non-critical loads.",
-          "Add more solar only if storm generation remains adequate.",
+          "Increase dust-independent generation, stored energy, or reduce demand while honoring budget and mass limits.",
+          "Compare power-margin strategies under the same seed before changing other life-support systems.",
         ],
       );
     } else if (waterKg < 0) {
@@ -512,7 +620,7 @@ export function runSimulation(
         sol,
         "The potable-water inventory was depleted.",
         [`Water balance reached ${round(waterKg)} kg.`],
-        ["Add storage or recycling capacity.", "Reduce water-intensive loads."],
+        ["Increase water reserve or recovery margin, or reduce water-intensive loads."],
       );
     } else if (oxygenKg < 0) {
       finalFailure = failure(
@@ -520,7 +628,7 @@ export function runSimulation(
         sol,
         "The breathable-oxygen inventory was depleted.",
         [`Oxygen balance reached ${round(oxygenKg)} kg.`],
-        ["Add a redundant oxygen generator or more oxygen storage."],
+        ["Increase oxygen production redundancy or explicitly connected reserve capacity."],
       );
     } else if (
       activeLabels.has("Primary oxygen generator outage") &&
@@ -535,8 +643,7 @@ export function runSimulation(
           "The scenario disables one oxygen generator.",
         ],
         [
-          "Add a second connected oxygen generator.",
-          "Add oxygen storage while staying within mass and budget limits.",
+          "Increase redundant oxygen production or explicitly connected reserve capacity while staying within mass and budget limits.",
         ],
       );
     } else if (foodKg < 0) {
@@ -545,15 +652,17 @@ export function runSimulation(
         sol,
         "Food stores were depleted before mission completion.",
         [`Food balance reached ${round(foodKg)} kg.`],
-        ["Add food storage or greenhouse capacity."],
+        ["Increase food reserve or production margin."],
       );
-    } else if (co2Kg > crew * CO2_CRITICAL_KG_PER_CREW) {
+    } else if (
+      co2Kg > crew * SIMULATION_COEFFICIENTS.co2CriticalKgPerCrew
+    ) {
       finalFailure = failure(
         "CO2_OVERLOAD",
         sol,
         "Habitat CO₂ exceeded the simplified safety threshold.",
         [`CO₂ reached ${round(co2Kg)} kg.`],
-        ["Add or reconnect CO₂ scrubbing capacity."],
+        ["Increase or restore connected CO₂ removal margin."],
       );
     }
 
@@ -598,7 +707,7 @@ export function runSimulation(
       [
         `Minimum reserve ${round(minWaterReserveSols)} sols; required ${design.constraints.minWaterReserveSols}.`,
       ],
-      ["Add water storage or improve recovery capacity."],
+      ["Increase explicitly connected water reserve or recovery margin."],
     );
   }
 
@@ -624,6 +733,7 @@ export function runSimulation(
   return {
     id: makeRunId(design.version, seed),
     designVersion: design.version,
+    designSnapshot: cloneDesign(design),
     seed,
     status: finalFailure ? "failure" : "success",
     lastSol,
@@ -631,6 +741,13 @@ export function runSimulation(
     metrics,
     timeline,
     events,
+    scenarioMarkers: scenario.events.map((event) => ({
+      id: event.id,
+      label: event.label,
+      type: event.type,
+      startSol: event.startSol,
+      endSol: event.endSol,
+    })),
     failure: finalFailure,
   };
 }

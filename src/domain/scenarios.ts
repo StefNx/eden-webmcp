@@ -52,6 +52,9 @@ export function createDefaultDesign(): HabitatDesign {
     createConnection("habitat-core", "scrubber-a", "co2", "system"),
     createConnection("greenhouse-a", "habitat-core", "food", "system"),
     createConnection("storage-a", "habitat-core", "water", "system"),
+    createConnection("storage-a", "habitat-core", "oxygen", "system"),
+    createConnection("storage-a", "habitat-core", "food", "system"),
+    createConnection("storage-a", "habitat-core", "spares", "system"),
   ];
 
   return {
