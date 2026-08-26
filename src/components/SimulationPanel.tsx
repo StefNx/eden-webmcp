@@ -21,7 +21,13 @@ function useAnimatedSol(run: SimulationRun | undefined): number | string {
     const startedAt = performance.now();
     const durationMs = Math.min(1_100, Math.max(550, run.lastSol * 2));
     const update = (now: number) => {
-      const progress = Math.min(1, (now - startedAt) / durationMs);
+      // Some embedded browsers expose a requestAnimationFrame timestamp whose
+      // time origin briefly differs from performance.now(). Never let that
+      // mismatch render a physically impossible negative mission sol.
+      const progress = Math.min(
+        1,
+        Math.max(0, (now - startedAt) / durationMs),
+      );
       const eased = 1 - (1 - progress) ** 3;
       setDisplayedSol(Math.round(run.lastSol * eased));
       if (progress < 1) frame = requestAnimationFrame(update);
